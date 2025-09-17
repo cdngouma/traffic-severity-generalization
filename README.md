@@ -46,7 +46,7 @@ We evaluated various models and resampling techniques to predict traffic acciden
 | XGBoost                                 | 0.889              | 0.887              | 0.754           | 0.802             | 0.795             | 0.557          |
 | XGBoost + Class-wise SMOTE              | 0.907              | 0.908              | 0.803           | 0.795             | 0.794             | 0.561          |
 | XGBoost + Borderline-SMOTE              | 0.865              | 0.866              | 0.714           | 0.794             | 0.794             | 0.561          |
-| LightGBM + orderline-SMOTE              | 0.852              | 0.853              | 0.685           | 0.798             | 0.796             | 0.566          |
+| LightGBM + Borderline-SMOTE              | 0.852              | 0.853              | 0.685           | 0.798             | 0.796             | 0.566          |
 | **Final Model (Full Dataset) + test on Boston data**          | 0.793              | 0.796              | 0.565           | **0.705**         | **0.716**       | **0.403**      |
 
 - **Baseline Decision Tree**: Showed significant overfitting with a large gap between train and test performance.
