@@ -33,10 +33,10 @@ After threshold optimization:
 
 The model maintains strong ranking performance and balanced error trade-offs when applied to an unseen city.
 
-#### Temporal Robustness (2019–2023 Boston)
+### Temporal Robustness (2019–2023 Boston)
 To evaluate resilience to distribution drift, the trained model was applied to post-2018 Boston data:
-- ROC-AUC: 0.79
-- Recall: 0.73
+- ROC-AUC: **0.79**
+- Recall: **0.73**
 
 Despite a reduced share of high-severity accidents, ranking performance remained stable, indicating robustness to moderate label and base-rate shifts.
 
