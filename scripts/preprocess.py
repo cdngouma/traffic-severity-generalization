@@ -1,31 +1,114 @@
 import os
+import re
 import numpy as np
 import pandas as pd
 
-
+# --- Configuration ---
 FILE_PATH = "../data/raw/US_Accidents_March23.csv"
 OUT_DIR = "../data/processed"
 OUT_FILE = os.path.join(OUT_DIR, "modeling_dataset_2016_2018.csv")
 
+# --- Regular Expressions for Road Classification ---
+RE_INTERSTATE = re.compile(r"\bi-\s?\d+\b", re.IGNORECASE)
+RE_US_ROUTE = re.compile(r"\bus\s?-?\s?\d+\b|\bus route\b", re.IGNORECASE)
+RE_STATE_ROUTE_GENERIC = re.compile(
+    r"\b(state route|route)\s?\d+\b", re.IGNORECASE
+)
+RE_STATE_CODE_ROUTE = re.compile(
+    r"\b[a-z]{1,3}\s?-?\s?\d+\b", re.IGNORECASE
+)
+
+# --- Keywords for Road Classification ---
+KEYWORD_MAP = {
+    "High_Speed": [
+        " freeway", " fwy", " expressway", " expy", " turnpike", " tpke",
+        " thruway", " trwy", " beltway", " outerbelt", " innerbelt",
+        " tollway", " motorway", " autobahn", " parkway connector",
+        " connector", " overcrossing"
+    ],
+    "Medium_Speed": [
+        " parkway", " pkwy", " boulevard", " blvd", " artery", " arterial",
+        " pike", " hwy", " highway", " route", " rte", " cswy",
+        " causeway", " skwy", " skyway"
+    ],
+    "Low_Speed": [
+        "street", " st", "avenue", " ave", " road", " rd", " drive", " dr",
+        "lane", " ln", " court", " ct", " way", " circle", " cir", " trail",
+        " trl", " alley", " aly", " loop", " pass", " path", " walk", " run",
+        " cv", " cove", " cres", " crescent", " bnd", " bend", " pt", " point"
+    ],
+    "Structure": [
+        " bridge", " brg", " tunnel", " tunl", " crossing", " viaduct"
+    ]
+}
+
+
+def map_speed_class(street: str) -> str:
+    """Map street name to a coarse road speed class."""
+    if pd.isna(street) or not str(street).strip():
+        return "Other/Unknown"
+
+    s = str(street).lower().strip()
+
+    # Priority 1: Interstates (High Speed)
+    if RE_INTERSTATE.search(s):
+        return "High_Speed"
+
+    # Priority 2: High Speed Keywords
+    if any(k in s for k in KEYWORD_MAP["High_Speed"]):
+        return "High_Speed"
+
+    # Priority 3: Structures (Bridges/Tunnels)
+    if any(k in s for k in KEYWORD_MAP["Structure"]):
+        # Special logic: structures with high-speed keywords are High_Speed
+        high_speed_structures = [
+            "tpke", "turnpike", "freeway", "fwy"
+        ]
+        if any(k in s for k in high_speed_structures):
+            return "High_Speed"
+        return "Medium_Speed"
+
+    # Priority 4: Defined Routes (Medium Speed)
+    if RE_US_ROUTE.search(s) or RE_STATE_ROUTE_GENERIC.search(s):
+        return "Medium_Speed"
+
+    # State-coded routes with guard against street directions (e.g., "W 11th St")
+    if RE_STATE_CODE_ROUTE.search(s):
+        if not re.search(r"\b([nesw]\s?\d+)(st|nd|rd|th)\b", s):
+            return "Medium_Speed"
+
+    # Priority 5: Medium Speed Keywords
+    if any(k in s for k in KEYWORD_MAP["Medium_Speed"]):
+        return "Medium_Speed"
+
+    # Priority 6: Low Speed Keywords
+    if any(k in s for k in KEYWORD_MAP["Low_Speed"]):
+        return "Low_Speed"
+
+    return "Other/Unknown"
+
 
 def collapse_severity(sev: int) -> str:
+    """Collapse 4-level severity into Low/High."""
     return "Low" if sev in (1, 2) else "High"
 
 
 def bucket_precipitation(s: pd.Series) -> pd.Categorical:
+    """Categorize precipitation amounts."""
     bins = [-0.01, 0.0001, 0.1, 0.3, np.inf]
     labels = ["No Rain", "Low", "Moderate", "Heavy"]
     return pd.cut(s, bins=bins, labels=labels, include_lowest=True)
 
 
 def bucket_visibility(s: pd.Series) -> pd.Categorical:
-    # Keep NaN as NaN; we'll label it as "Unknown" later
+    """Categorize visibility distance."""
     bins = [-0.01, 1, 3, 6, np.inf]
     labels = ["Very Low", "Low", "Moderate", "Clear"]
     return pd.cut(s, bins=bins, labels=labels, include_lowest=True)
 
 
-def group_weather(cond) -> str:
+def group_weather(cond: str) -> str:
+    """Group weather conditions into broader categories."""
     if pd.isna(cond):
         return "Unknown"
     cond = str(cond).lower()
@@ -46,77 +129,85 @@ def group_weather(cond) -> str:
 
 
 def preprocess():
+    """Load, clean, and feature-engineer the dataset."""
     os.makedirs(OUT_DIR, exist_ok=True)
 
+    print(f"Loading data from {FILE_PATH}...")
     df = pd.read_csv(FILE_PATH)
 
-    df["Start_Time"] = pd.to_datetime(df["Start_Time"], errors="coerce")
-    df["Year"] = df["Start_Time"].dt.year
-    df = df[df["Year"].between(2016, 2016)]
-
-    # Drop duplicates (ignoring ID)
+    # --- Deduplication ---
+    # Drop duplicates, ignoring the unique identifier "ID"
     dup_cols = [c for c in df.columns if c != "ID"]
     df = df.drop_duplicates(subset=dup_cols)
 
-    # Parse time
+    # --- Time Processing ---
     df["Start_Time"] = pd.to_datetime(df["Start_Time"], errors="coerce")
     df = df.dropna(subset=["Start_Time"])
 
-    # Time features
     df["Year"] = df["Start_Time"].dt.year
     df["Hour"] = df["Start_Time"].dt.hour
     df["Is_Weekend"] = df["Start_Time"].dt.dayofweek >= 5
 
-    # Restrict stable period
+    # Restrict to stable data period
     df = df[df["Year"].between(2016, 2018)]
 
-    # Physical plausibility filters (keep NaNs; filter only observed values)
+    # --- Data Cleaning ---
+    # Physical plausibility filters
     numeric_cols_ranges = {
         "Temperature(F)": (-40, 120),
-        "Wind_Chill(F)": (-60, 80),
-        "Humidity(%)": (0, 100),
-        "Pressure(in)": (28, 32),
         "Visibility(mi)": (0, 10),
-        "Wind_Speed(mph)": (0, 60),
         "Precipitation(in)": (0, 25),
-        "Distance(mi)": (0, 100),
     }
 
     for col, (lo, hi) in numeric_cols_ranges.items():
         if col in df.columns:
-            ok = df[col].isna() | df[col].between(lo, hi)
-            df = df[ok]
+            # Keep rows within range OR rows that are already NaN
+            is_valid = df[col].isna() | df[col].between(lo, hi)
+            df = df[is_valid]
 
-    # Missing handling
-    df["Precipitation(in)"] = df["Precipitation(in)"].fillna(0.0)  # assumption: missing -> no rain
+    # Impute missing precipitation: no record -> 0.0 in
+    df["Precipitation(in)"] = df["Precipitation(in)"].fillna(0.0)
 
-    # Buckets / groupings
-    df["Rain_Bucket"] = bucket_precipitation(df["Precipitation(in)"])
-    df["Visibility_Bucket"] = bucket_visibility(df["Visibility(mi)"]).astype("object")
-    df["Visibility_Bucket"] = df["Visibility_Bucket"].fillna("Unknown")
-    df["Weather_Group"] = df["Weather_Condition"].apply(group_weather)
+    # --- Feature Engineering ---
 
-    # Differentiate city name with State
-    df["CityState"] = df["City"].astype(str) + ", " + df["State"].astype(str)
+    # Create CityState identifier for grouping/splitting
+    df["CityState"] = (
+        df["City"].fillna("Unknown").astype(str) +
+        ", " +
+        df["State"].fillna("NA").astype(str)
+    )
 
-    # Target (keep original if you want)
+    # Derived speed class from Street name
+    if "Street" in df.columns:
+        df["Speed_Class"] = df["Street"].apply(map_speed_class).astype("object")
+    else:
+        df["Speed_Class"] = "Unknown"
+
+    # Cyclical encoding for Hour
+    df["Hour_Sin"] = np.sin(2 * np.pi * df["Hour"] / 24)
+    df["Hour_Cos"] = np.cos(2 * np.pi * df["Hour"] / 24)
+
+    # --- Target Preparation ---
     df["Severity2"] = df["Severity"].apply(collapse_severity)
 
-    # Final feature set
+    # --- Final Formatting and Export ---
     features = [
-        "Severity2",
-        "CityState",
-        "Hour",
-        "Is_Weekend",
-        "Rain_Bucket",
-        "Weather_Group",
-        "Visibility_Bucket",
-        "Traffic_Signal",
+        "Severity2", "CityState", "Hour_Sin", "Hour_Cos", "Is_Weekend",
+        "Speed_Class", "Precipitation(in)", "Visibility(mi)",
+        "Temperature(F)", "Traffic_Signal"
     ]
-    df = df[features].dropna()
 
+    # Keep only columns that exist
+    features = [c for c in features if c in df.columns]
+    df = df[features]
+
+    # Drop rows missing crucial information
+    must_have = ["Severity2", "CityState", "Hour_Sin", "Hour_Cos"]
+    df = df.dropna(subset=[c for c in must_have if c in df.columns])
+
+    print(f"Saving processed data to {OUT_FILE}...")
     df.to_csv(OUT_FILE, index=False)
-    print(f"Saved: {OUT_FILE}  |  rows={len(df):,}  cols={df.shape[1]}")
+    print(f"Done. Rows: {len(df):,}, Columns: {df.shape[1]}")
 
 
 if __name__ == "__main__":
