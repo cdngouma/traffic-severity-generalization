@@ -2,11 +2,11 @@ import os
 import re
 import numpy as np
 import pandas as pd
+import argparse
 
 # --- Configuration ---
 FILE_PATH = "../data/raw/US_Accidents_March23.csv"
 OUT_DIR = "../data/processed"
-OUT_FILE = os.path.join(OUT_DIR, "modeling_dataset_2016_2018.csv")
 
 # --- Regular Expressions for Road Classification ---
 RE_INTERSTATE = re.compile(r"\bi-\s?\d+\b", re.IGNORECASE)
@@ -128,8 +128,15 @@ def group_weather(cond: str) -> str:
     return "Other"
 
 
-def preprocess():
+def preprocess(post: bool=False, boston: bool=False):
     """Load, clean, and feature-engineer the dataset."""
+    if post:
+        year_range = (2019, 2023)
+    else:
+        year_range = (2016, 2018)
+    
+    OUT_FILE = os.path.join(OUT_DIR, f"modeling_dataset_{year_range[0]}_{year_range[1]}{'_Boston' if boston else ''}.csv")
+    
     os.makedirs(OUT_DIR, exist_ok=True)
 
     print(f"Loading data from {FILE_PATH}...")
@@ -149,7 +156,7 @@ def preprocess():
     df["Is_Weekend"] = df["Start_Time"].dt.dayofweek >= 5
 
     # Restrict to stable data period
-    df = df[df["Year"].between(2016, 2018)]
+    df = df[df["Year"].between(year_range[0], year_range[1])]
 
     # --- Data Cleaning ---
     # Physical plausibility filters
@@ -176,6 +183,9 @@ def preprocess():
         ", " +
         df["State"].fillna("NA").astype(str)
     )
+
+    if boston:
+        df = df[df["CityState"] == "Boston, MA"]
 
     # Derived speed class from Street name
     if "Street" in df.columns:
@@ -211,4 +221,23 @@ def preprocess():
 
 
 if __name__ == "__main__":
-    preprocess()
+    parser = argparse.ArgumentParser(description="Preprocess traffic accident data.")
+
+    # Add the --post flag
+    parser.add_argument(
+        '--post', 
+        action='store_true', 
+        help="Get data from 2019-2023"
+    )
+
+    # Add the --boston flag
+    parser.add_argument(
+        '--boston', 
+        action='store_true', 
+        help="Only include Boston data"
+    )
+
+    # Parse arguments
+    args = parser.parse_args()
+    
+    preprocess(post=args.post, boston=args.boston)
