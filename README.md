@@ -14,7 +14,7 @@ The objective is not maximizing in-sample accuracy, but testing real-world trans
     - Used weather and infrastructure signals with stable cross-city behavior.
 - **Generalization Strategy:**
     - Removed high-cardinality geographic identifiers (e.g., street names, coordinates).
-    - Removed high-cardinality geographic identifiers (e.g., street names, coordinates).
+    - Excluded post-accident variables to prevent leakage.
     - Applied cross-city validation using GroupKFold.
 
 ### 2. Modeling
@@ -26,10 +26,10 @@ The objective is not maximizing in-sample accuracy, but testing real-world trans
 
 ## Key Results (Boston Holdout)
 After threshold optimization:
-- ROC-AUC (Overall Ranking): 0.801
-- PR-AUC (Precision-Recall): 0.688
-- F1-Score: 0.721
-- Recall (Sensitivity): 0.776
+- ROC-AUC: **0.801**
+- PR-AUC (Precision-Recall): **0.688**
+- F1-Score: **0.721**
+- Recall: **0.776**
 
 The model maintains strong ranking performance and balanced error trade-offs when applied to an unseen city.
 
