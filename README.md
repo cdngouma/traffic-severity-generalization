@@ -1,4 +1,4 @@
-# Traffic Accident Severity – Cross-City Generalization Study
+# Robust Traffic Severity Prediction Across Cities
 
 A machine learning project focused on **geographic generalization** in accident severity prediction.
 
